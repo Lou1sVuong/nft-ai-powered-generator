@@ -3,6 +3,7 @@ import Header from "@/components/layouts/header";
 import "@/styles/globals.css";
 import { IBM_Plex_Mono } from "next/font/google";
 import Providers from "@/providers";
+import { Toaster } from "sonner";
 
 const ibmPlexMonoFont = IBM_Plex_Mono({
   subsets: ["latin"],
@@ -28,10 +29,11 @@ export default function RootLayout({
       >
         <Providers>
           <Header />
-          <main className="flex flex-col gap-2 px-2 py-14 xl:px-32">
+          <main className="flex flex-col gap-2 px-2 py-14 xl:px-4">
             {children}
           </main>
         </Providers>
+        <Toaster position="top-right" />
       </body>
     </html>
   );

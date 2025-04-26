@@ -1,78 +1,102 @@
 "use client";
 
 import { useState } from "react";
+import { Card } from "@/components/ui/card";
+import { Dispatch, SetStateAction } from "react";
+import Image from "next/image";
 
-const artStyles = [
+interface ArtStyle {
+  id: string;
+  name: string;
+  description: string;
+  image: string;
+}
+
+const artStyles: ArtStyle[] = [
   {
-    id: "digital",
-    name: "Digital Art",
-    image: "/placeholder.svg?height=100&width=100&text=Digital",
-  },
-  {
-    id: "pixel",
-    name: "Pixel Art",
-    image: "/placeholder.svg?height=100&width=100&text=Pixel",
+    id: "realistic",
+    name: "Realistic",
+    description: "Photorealistic style with high detail",
+    image: "/styles/realistic.jpg",
   },
   {
     id: "abstract",
     name: "Abstract",
-    image: "/placeholder.svg?height=100&width=100&text=Abstract",
-  },
-  {
-    id: "surreal",
-    name: "Surrealism",
-    image: "/placeholder.svg?height=100&width=100&text=Surreal",
-  },
-  {
-    id: "cyber",
-    name: "Cyberpunk",
-    image: "/placeholder.svg?height=100&width=100&text=Cyber",
-  },
-  {
-    id: "vapor",
-    name: "Vaporwave",
-    image: "/placeholder.svg?height=100&width=100&text=Vapor",
+    description: "Non-representational art with shapes and colors",
+    image: "/styles/abstract.jpg",
   },
   {
     id: "anime",
     name: "Anime",
-    image: "/placeholder.svg?height=100&width=100&text=Anime",
+    description: "Japanese animation style",
+    image: "/styles/anime.jpg",
   },
   {
-    id: "3d",
-    name: "3D Render",
-    image: "/placeholder.svg?height=100&width=100&text=3D",
+    id: "cartoon",
+    name: "Cartoon",
+    description: "Stylized, simplified art style",
+    image: "/styles/cartoon.jpg",
+  },
+  {
+    id: "cyberpunk",
+    name: "Cyberpunk",
+    description: "Futuristic high-tech with neon colors",
+    image: "/styles/cyberpunk.jpg",
+  },
+  {
+    id: "watercolor",
+    name: "Watercolor",
+    description: "Soft, blended style with paint-like quality",
+    image: "/styles/watercolor.jpg",
   },
 ];
 
-export default function ArtStyleSelector() {
-  const [selectedStyle, setSelectedStyle] = useState<string | null>(null);
+export interface ArtStyleSelectorProps {
+  selectedStyle?: string;
+  onStyleSelect?: Dispatch<SetStateAction<string>>;
+}
+
+export default function ArtStyleSelector({
+  selectedStyle = "realistic",
+  onStyleSelect,
+}: ArtStyleSelectorProps) {
+  const [internalSelected, setInternalSelected] = useState(selectedStyle);
+
+  const handleSelect = (styleId: string) => {
+    setInternalSelected(styleId);
+    if (onStyleSelect) {
+      onStyleSelect(styleId);
+    }
+  };
+
+  // Use either the controlled (external) or uncontrolled (internal) state
+  const currentStyle = selectedStyle || internalSelected;
 
   return (
-    <div className="grid grid-cols-4 gap-3">
+    <div className="grid grid-cols-3 sm:grid-cols-6 lg:grid-cols-6 gap-4">
       {artStyles.map((style) => (
-        <div
+        <Card
           key={style.id}
-          className={`cursor-pointer rounded-lg overflow-hidden border-2 transition-all ${
-            selectedStyle === style.id
-              ? "border-purple-500 ring-2 ring-purple-500/50"
-              : "border-slate-700 hover:border-slate-600"
+          className={`overflow-hidden cursor-pointer transition-all flex-1 group ${
+            currentStyle === style.id
+              ? "ring-2 ring-highlight ring-offset-2"
+              : "opacity-70"
           }`}
-          onClick={() => setSelectedStyle(style.id)}
+          onClick={() => handleSelect(style.id)}
         >
-          <div className="aspect-square relative">
-            <img
-              src={style.image || "/placeholder.svg"}
+          <div className="aspect-square relative bg-slate-200">
+            <Image
+              width={500}
+              height={500}
+              src={style.image}
               alt={style.name}
-              className="w-full h-full object-cover"
+              className="w-full h-full object-cover group-hover:scale-105 transition-all"
             />
-            <div className="absolute inset-0 bg-gradient-to-t from-slate-900/90 via-transparent to-transparent flex items-end p-2">
-              <span className="text-xs text-white font-medium">
-                {style.name}
-              </span>
-            </div>
           </div>
-        </div>
+          <div className="p-2 text-center">
+            <p className="font-medium text-xs">{style.name}</p>
+          </div>
+        </Card>
       ))}
     </div>
   );

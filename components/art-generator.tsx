@@ -4,7 +4,6 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Slider } from "@/components/ui/slider";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -15,31 +14,100 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Wand2, Upload, RefreshCw, Download, Loader2 } from "lucide-react";
+import { toast } from "sonner";
 import ArtStyleSelector from "@/components/art-style-selector";
+import { artStyles } from "./art-style-data";
 
 export default function ArtGenerator() {
   const [prompt, setPrompt] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedImage, setGeneratedImage] = useState<string | null>(null);
   const [selectedTab, setSelectedTab] = useState("text-to-image");
+  const [artStyle, setArtStyle] = useState("realistic");
+  const [imageSize, setImageSize] = useState("square");
+  const [quality, setQuality] = useState("standard");
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [error, setError] = useState<string | null>(null);
 
-  const handleGenerate = () => {
+  const handleGenerate = async () => {
     if (!prompt.trim()) return;
 
     setIsGenerating(true);
+    setError(null);
 
-    // Simulate AI generation
-    setTimeout(() => {
-      setGeneratedImage(
-        "/placeholder.svg?height=512&width=512&text=AI Generated Art"
-      );
+    try {
+      // Get the style name with proper formatting
+      const styleText =
+        artStyles.find((style) => style.id === artStyle)?.name || artStyles;
+
+      // Prepare the full prompt with art style
+      const fullPrompt = `${prompt}. Style: ${styleText}.`;
+
+      // Call the API route that handles the DALL-E API request
+      const response = await fetch("/api/generate-image", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          prompt: fullPrompt,
+          quality: quality === "hd" ? "hd" : "standard",
+          size: imageSize,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || "Failed to generate image");
+      }
+
+      const data = await response.json();
+
+      // Convert base64 data to URL for display
+      if (data.image) {
+        setGeneratedImage(`data:image/png;base64,${data.image}`);
+      } else {
+        throw new Error("Failed to receive image data");
+      }
+    } catch (error) {
+      console.log("Error generating image:", error);
+      if (error instanceof Error) {
+        setError(error.message);
+      } else {
+        setError("An unknown error occurred");
+      }
+    } finally {
       setIsGenerating(false);
-    }, 2000);
+    }
   };
 
   const handleReset = () => {
     setPrompt("");
     setGeneratedImage(null);
+    setTitle("");
+    setDescription("");
+    setError(null);
+  };
+
+  const handleDownload = () => {
+    if (!generatedImage) return;
+
+    // Create a temporary link element
+    const link = document.createElement("a");
+    link.href = generatedImage;
+    link.download = title
+      ? `${title.replace(/\s+/g, "-").toLowerCase()}.png`
+      : "generated-artwork.png";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleMintNFT = () => {
+    toast("Minting NFT Successfully", {
+      description: "Your NFT has been minted successfully",
+    });
   };
 
   return (
@@ -53,8 +121,11 @@ export default function ArtGenerator() {
         >
           <TabsList>
             <TabsTrigger value="text-to-image">Text to Image</TabsTrigger>
-            <TabsTrigger value="image-to-image">Image to Image</TabsTrigger>
+            <TabsTrigger disabled value="image-to-image">
+              Image to Image
+            </TabsTrigger>
           </TabsList>
+          <p className="text-highlight text-xs">Coming Soon: Image to Image</p>
           <TabsContent value="text-to-image" className="pt-6">
             <div className="space-y-4">
               <div>
@@ -73,7 +144,7 @@ export default function ArtGenerator() {
           </TabsContent>
           <TabsContent value="image-to-image" className="pt-6">
             <div className="space-y-4">
-              <div className="border-2 border-dashedrounded-lg p-8 text-center">
+              <div className="border-2 border-dashed rounded-lg p-8 text-center">
                 <div className="flex flex-col items-center justify-center">
                   <Upload className="h-10 w-10 mb-4" />
                   <p className="text-slate-500 mb-2">
@@ -92,7 +163,7 @@ export default function ArtGenerator() {
                 <Textarea
                   id="prompt-image"
                   placeholder="Describe how you want to modify the image... (e.g., 'Make it more cyberpunk style')"
-                  className=" placeholder:text-slate-500"
+                  className="placeholder:text-slate-500"
                 />
               </div>
             </div>
@@ -102,7 +173,14 @@ export default function ArtGenerator() {
         <div className="space-y-6">
           <div>
             <Label className="mb-4 block">Select art style</Label>
-            <ArtStyleSelector />
+            <ArtStyleSelector
+              selectedStyle={artStyle}
+              onStyleSelect={setArtStyle}
+            />
+            <div className="mt-2 text-sm text-slate-500 italic">
+              Selected style:{" "}
+              {artStyle.charAt(0).toUpperCase() + artStyle.slice(1)}
+            </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -110,7 +188,11 @@ export default function ArtGenerator() {
               <Label htmlFor="size" className="mb-2 block">
                 Image size
               </Label>
-              <Select defaultValue="square">
+              <Select
+                defaultValue="square"
+                value={imageSize}
+                onValueChange={setImageSize}
+              >
                 <SelectTrigger>
                   <SelectValue placeholder="Select size" />
                 </SelectTrigger>
@@ -127,25 +209,20 @@ export default function ArtGenerator() {
               <Label htmlFor="quality" className="mb-2 block">
                 Quality
               </Label>
-              <Select defaultValue="standard">
+              <Select
+                defaultValue="standard"
+                value={quality}
+                onValueChange={setQuality}
+              >
                 <SelectTrigger>
                   <SelectValue placeholder="Select quality" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="draft">Draft</SelectItem>
                   <SelectItem value="standard">Standard</SelectItem>
                   <SelectItem value="hd">HD</SelectItem>
                 </SelectContent>
               </Select>
             </div>
-          </div>
-
-          <div>
-            <div className="flex justify-between mb-2">
-              <Label htmlFor="creativity">Creativity level</Label>
-              <span className="text-slate-400 text-sm">70%</span>
-            </div>
-            <Slider defaultValue={[70]} max={100} step={1} className="py-4" />
           </div>
 
           <div className="flex flex-col sm:flex-row gap-4">
@@ -175,8 +252,8 @@ export default function ArtGenerator() {
       </div>
 
       {/* Result Section */}
-      <div className="rounded-xl borderp-6">
-        <h3 className="text-xl font-mediummb-6">Generated Artwork</h3>
+      <div className="rounded-xl border p-6">
+        <h3 className="text-xl font-medium mb-6">Generated Artwork</h3>
 
         <div className="flex items-center justify-center min-h-[400px] border rounded-lg mb-6">
           {isGenerating ? (
@@ -184,15 +261,22 @@ export default function ArtGenerator() {
               <Loader2 className="h-10 w-10 animate-spin mb-4" />
               <p className="text-slate-300">Creating your masterpiece...</p>
             </div>
+          ) : error ? (
+            <div className="text-center px-6">
+              <p className="text-red-500 mb-2">Error: {error}</p>
+              <p className="text-slate-500 text-sm">
+                Please try again with a different prompt
+              </p>
+            </div>
           ) : generatedImage ? (
             <img
-              src={generatedImage || "/placeholder.svg"}
+              src={generatedImage}
               alt="Generated artwork"
               className="max-w-full max-h-[400px] rounded-lg"
             />
           ) : (
             <div className="text-center px-6">
-              <Wand2 className="h-12 w-12  mx-auto mb-4" />
+              <Wand2 className="h-12 w-12 mx-auto mb-4" />
               <p className="text-slate-300 mb-2">
                 Your artwork will appear here
               </p>
@@ -214,6 +298,8 @@ export default function ArtGenerator() {
                 id="title"
                 placeholder="Enter a title for your artwork"
                 className="placeholder:text-slate-500"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
               />
             </div>
             <div>
@@ -224,11 +310,19 @@ export default function ArtGenerator() {
                 id="description"
                 placeholder="Add a description for your artwork"
                 className="placeholder:text-slate-500"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
               />
             </div>
             <div className="flex flex-col sm:flex-row gap-4">
-              <Button className="flex-1">Mint as NFT</Button>
-              <Button variant="outline" className="flex-1">
+              <Button className="flex-1" onClick={handleMintNFT}>
+                Mint as NFT
+              </Button>
+              <Button
+                variant="outline"
+                className="flex-1"
+                onClick={handleDownload}
+              >
                 <Download className="mr-2 h-4 w-4" />
                 Download
               </Button>
