@@ -1,5 +1,5 @@
-import ArtGenerator from "@/components/art-generator";
 import type { Metadata } from "next";
+import ArtGeneratorClient from "@/components/client-wrappers/art-generator-client";
 
 export const metadata: Metadata = {
   title: "Create AI Art | ArtisanHub",
@@ -20,7 +20,7 @@ export default function CreatePage() {
           </p>
         </div>
 
-        <ArtGenerator />
+        <ArtGeneratorClient />
       </div>
     </main>
   );

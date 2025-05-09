@@ -12,7 +12,8 @@ import {
 } from "@tabler/icons-react";
 import Link from "next/link";
 import { useState } from "react";
-import ConnectWalletBtn from "../connect-btn";
+import ConnectWalletClient from "../client-wrappers/connect-wallet-client";
+import ClientOnly from "../client-only";
 
 const MENU_ITEMS = [
   { label: "Trade", href: "/" },
@@ -85,7 +86,7 @@ function Header() {
             <Socials />
             <Separator orientation="vertical" />
             <ThemeToggle />
-            <ConnectWalletBtn />
+            <ConnectWalletClient />
           </div>
         </div>
       </div>
@@ -107,7 +108,7 @@ function Header() {
                 </div>
               ))}
               <Link href="/about-us">About Us</Link>
-              <ConnectWalletBtn />
+              <ConnectWalletClient />
             </div>
             <Socials />
             <div className="flex justify-center">

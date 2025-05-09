@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import OpenAI from 'openai';
+import OpenAI from "openai";
+import { artStyles } from "@/components/art-style-data";
 
 // Khởi tạo OpenAI API
 const openai = new OpenAI({
@@ -8,69 +9,57 @@ const openai = new OpenAI({
 
 interface GenerateImageRequest {
   prompt: string;
-  width?: number;
-  height?: number;
-  quality?: 'standard' | 'hd';
-  size?: string;
+  style: string;
+  size: string;
+  quality: string;
 }
 
 export async function POST(request: NextRequest) {
   try {
-    // Đọc dữ liệu từ request body
-    const data = await request.json() as GenerateImageRequest;
-    const { prompt, size = 'square' } = data;
-    console.log("prompt", prompt);
-    
-    // Dynamically set size based on user selection
-    let imageSize = '1024x1024'; // Default square
-    
-    if (size === 'portrait') {
-      imageSize = '1024x1792';
-    } else if (size === 'landscape') {
-      imageSize = '1792x1024';
-    } else if (size === 'wide') {
-      imageSize = '1792x1024';
-    }
+    const { prompt, style, size, quality } = await request.json() as GenerateImageRequest;
 
     if (!prompt) {
       return NextResponse.json(
-        { message: 'Prompt content is required' },
+        { error: "Prompt is required" },
         { status: 400 }
       );
     }
 
+    // Map size to DALL-E dimensions
+    const dimensions = {
+      square: "1024x1024",
+      portrait: "1024x1792",
+      landscape: "1792x1024",
+    }[size] || "1024x1024";
+
+    // Map quality to DALL-E quality
+    const qualitySetting = quality === "high" ? "hd" : "standard";
+
+    // Find the selected style
+    const selectedStyle = artStyles.find(s => s.id === style);
+    const stylePrompt = selectedStyle ? `in ${selectedStyle.name} style` : "";
+    const fullPrompt = `${prompt}${stylePrompt ? `, ${stylePrompt}` : ""}`;
+
     const response = await openai.images.generate({
-      prompt: prompt,
+      prompt: fullPrompt,
       n: 1,
-      size: imageSize as '1024x1024' | '1792x1024' | '1024x1792',
+      size: dimensions as "1024x1024" | "1024x1792" | "1792x1024",
       response_format: "b64_json",
     });
 
-    console.log("response", response);
-    const imageData = response.data?.[0].b64_json;
-
-    if (!imageData) {
-      throw new Error('No image data received from OpenAI');
+    if (!response.data?.[0]?.b64_json) {
+      throw new Error("No image data received from OpenAI");
     }
 
     return NextResponse.json({
-      success: true,
-      image: imageData,
-      prompt,
+      image: `data:image/png;base64,${response.data[0].b64_json}`,
     });
-
-  } catch (error: unknown) {
-    console.error('Error generating image:', error);
-    
-    // Log more details if it's an OpenAI error
-    if (typeof error === 'object' && error !== null && 'response' in error) {
-      console.error('OpenAI API error details:', JSON.stringify(error, null, 2));
-    }
-    
-    const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
-
+  } catch (error) {
+    console.error("Error generating image:", error);
     return NextResponse.json(
-      { message: 'Error generating image', error: errorMessage },
+      {
+        error: error instanceof Error ? error.message : "Failed to generate image",
+      },
       { status: 500 }
     );
   }

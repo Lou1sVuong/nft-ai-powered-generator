@@ -17,6 +17,17 @@ import { Wand2, Upload, RefreshCw, Download, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import ArtStyleSelector from "@/components/art-style-selector";
 import { artStyles } from "./art-style-data";
+import { useWallet } from "@lazorkit/wallet";
+import { useSessionStorage } from "@/hooks/useSessionStorage";
+import {
+  TransactionInstruction,
+  PublicKey,
+  SystemProgram,
+} from "@solana/web3.js";
+
+// Sample image for testing
+const SAMPLE_IMAGE =
+  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
 
 export default function ArtGenerator() {
   const [prompt, setPrompt] = useState("");
@@ -29,54 +40,60 @@ export default function ArtGenerator() {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const {
+    isConnected,
+    publicKey,
+    connect,
+    disconnect,
+    smartWalletAuthorityPubkey,
+    error: walletError,
+    isLoading,
+    signMessage,
+  } = useWallet();
+  const [storedSmartWalletPubkey, setStoredSmartWalletPubkey] =
+    useSessionStorage("smartWalletAuthorityPubkey", "");
 
   const handleGenerate = async () => {
-    if (!prompt.trim()) return;
-
-    setIsGenerating(true);
-    setError(null);
+    if (!prompt) {
+      toast.error("Please enter a prompt first");
+      return;
+    }
 
     try {
-      // Get the style name with proper formatting
-      const styleText =
-        artStyles.find((style) => style.id === artStyle)?.name || artStyles;
+      setIsGenerating(true);
+      setError(null);
 
-      // Prepare the full prompt with art style
-      const fullPrompt = `${prompt}. Style: ${styleText}.`;
-
-      // Call the API route that handles the DALL-E API request
+      // Call the image generation API
       const response = await fetch("/api/generate-image", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          prompt: fullPrompt,
-          quality: quality === "hd" ? "hd" : "standard",
+          prompt,
+          style: artStyle,
           size: imageSize,
+          quality,
         }),
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || "Failed to generate image");
+        const error = await response.json();
+        throw new Error(error.message || "Failed to generate image");
       }
 
       const data = await response.json();
-
-      // Convert base64 data to URL for display
-      if (data.image) {
-        setGeneratedImage(`data:image/png;base64,${data.image}`);
-      } else {
-        throw new Error("Failed to receive image data");
-      }
+      setGeneratedImage(data.image);
+      toast.success("Image generated successfully!");
     } catch (error) {
-      console.log("Error generating image:", error);
-      if (error instanceof Error) {
-        setError(error.message);
-      } else {
-        setError("An unknown error occurred");
-      }
+      console.error("Error generating image:", error);
+      setError(
+        error instanceof Error ? error.message : "Failed to generate image"
+      );
+      toast.error("Failed to generate image", {
+        description:
+          error instanceof Error ? error.message : "Please try again later",
+      });
     } finally {
       setIsGenerating(false);
     }
@@ -93,7 +110,6 @@ export default function ArtGenerator() {
   const handleDownload = () => {
     if (!generatedImage) return;
 
-    // Create a temporary link element
     const link = document.createElement("a");
     link.href = generatedImage;
     link.download = title
@@ -104,10 +120,145 @@ export default function ArtGenerator() {
     document.body.removeChild(link);
   };
 
-  const handleMintNFT = () => {
-    toast("Minting NFT Successfully", {
-      description: "Your NFT has been minted successfully",
+  const handleMintNFT = async () => {
+    if (!generatedImage || !title) {
+      toast.error("Please provide a title and generate an image first");
+      return;
+    }
+
+    console.log("Wallet state:", {
+      isConnected,
+      publicKey,
+      smartWalletAuthorityPubkey,
+      storedSmartWalletPubkey,
+      isLoading,
+      walletError,
     });
+
+    if (!isConnected) {
+      toast.error("Please connect your wallet first");
+      return;
+    }
+
+    if (!storedSmartWalletPubkey) {
+      toast.error(
+        "Wallet authority key not found. Please try reconnecting your wallet."
+      );
+      return;
+    }
+
+    if (!signMessage) {
+      toast.error("Your wallet does not support message signing");
+      return;
+    }
+
+    try {
+      console.log("Sending mint request...");
+      console.log(
+        "Smart Wallet Authority Public Key:",
+        storedSmartWalletPubkey
+      );
+
+      // Reconnect wallet to ensure public key is available
+      console.log("Reconnecting wallet...");
+      await connect();
+      console.log("Wallet reconnected");
+
+      // Create metadata
+      const metadata = {
+        name: title,
+        symbol: "ART",
+        description: description || "",
+        image: generatedImage,
+        attributes: [],
+        properties: {
+          files: [
+            {
+              uri: generatedImage,
+              type: "image/png",
+            },
+          ],
+        },
+      };
+
+      // Create a transaction instruction for signing
+      const instruction = new TransactionInstruction({
+        programId: SystemProgram.programId,
+        keys: [
+          {
+            pubkey: new PublicKey(storedSmartWalletPubkey),
+            isSigner: true,
+            isWritable: true,
+          },
+        ],
+        data: Buffer.from(JSON.stringify(metadata)),
+      });
+
+      console.log("Created instruction:", {
+        programId: instruction.programId.toBase58(),
+        keys: instruction.keys.map((key) => ({
+          pubkey: key.pubkey.toBase58(),
+          isSigner: key.isSigner,
+          isWritable: key.isWritable,
+        })),
+        data: instruction.data.toString("base64"),
+      });
+
+      // Sign the instruction
+      console.log("Attempting to sign instruction...");
+      const signature = await signMessage(instruction);
+      console.log("Received signature:", signature);
+
+      if (!signature) {
+        throw new Error("Failed to sign metadata");
+      }
+
+      // Send the signed metadata to the API
+      const response = await fetch("/api/mint-nft", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          image: generatedImage,
+          title,
+          description,
+          publicKey: storedSmartWalletPubkey,
+          signature,
+        }),
+      });
+
+      console.log("Response status:", response.status);
+      console.log(
+        "Response headers:",
+        Object.fromEntries(response.headers.entries())
+      );
+
+      let data;
+      try {
+        const text = await response.text();
+        console.log("Raw response:", text);
+        data = JSON.parse(text);
+      } catch (e: unknown) {
+        console.error("Failed to parse response:", e);
+        const errorMessage = e instanceof Error ? e.message : "Unknown error";
+        throw new Error(`Server returned an invalid response: ${errorMessage}`);
+      }
+
+      if (!response.ok) {
+        throw new Error(data.details || data.error || "Failed to mint NFT");
+      }
+
+      toast.success("NFT Minted Successfully!", {
+        description: `NFT Address: ${data.nftAddress}`,
+      });
+    } catch (error) {
+      console.error("Error minting NFT:", error);
+      toast.error("Failed to mint NFT", {
+        description:
+          error instanceof Error ? error.message : "Please try again later",
+      });
+    }
   };
 
   return (
