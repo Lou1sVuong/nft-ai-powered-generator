@@ -153,7 +153,7 @@ export default function ArtGenerator() {
     }
 
     try {
-      console.log("Sending mint request...");
+      console.log("Preparing NFT mint...");
       console.log(
         "Smart Wallet Authority Public Key:",
         storedSmartWalletPubkey
@@ -164,94 +164,56 @@ export default function ArtGenerator() {
       await connect();
       console.log("Wallet reconnected");
 
-      // Create metadata
-      const metadata = {
+      // Tạo metadata cho NFT - không bao gồm dữ liệu ảnh
+      const nftMetadata = {
         name: title,
         symbol: "ART",
         description: description || "",
-        image: generatedImage,
-        attributes: [],
-        properties: {
-          files: [
-            {
-              uri: generatedImage,
-              type: "image/png",
-            },
-          ],
-        },
+        // Không bao gồm dữ liệu ảnh ở đây
       };
 
-      // Create a transaction instruction for signing
-      const instruction = new TransactionInstruction({
-        programId: SystemProgram.programId,
+      // Tạo instruction với thông tin NFT cơ bản
+      console.log("Creating instruction with basic NFT metadata...");
+
+      // Tạo một buffer nhỏ hơn chỉ chứa thông tin cần thiết
+      const simpleData = Buffer.from(
+        `Mint NFT: ${title} - ${description || "No description"}`
+      );
+
+      const instruction = {
+        programId: SystemProgram.programId.toString(),
         keys: [
           {
-            pubkey: new PublicKey(storedSmartWalletPubkey),
+            pubkey: storedSmartWalletPubkey,
             isSigner: true,
             isWritable: true,
           },
         ],
-        data: Buffer.from(JSON.stringify(metadata)),
+        data: simpleData,
+      };
+
+      console.log("Instruction object (simplified):", {
+        ...instruction,
+        data: `Buffer of length ${simpleData.length}`,
       });
 
-      console.log("Created instruction:", {
-        programId: instruction.programId.toBase58(),
-        keys: instruction.keys.map((key) => ({
-          pubkey: key.pubkey.toBase58(),
-          isSigner: key.isSigner,
-          isWritable: key.isWritable,
-        })),
-        data: instruction.data.toString("base64"),
-      });
-
-      // Sign the instruction
-      console.log("Attempting to sign instruction...");
-      const signature = await signMessage(instruction);
-      console.log("Received signature:", signature);
-
-      if (!signature) {
-        throw new Error("Failed to sign metadata");
-      }
-
-      // Send the signed metadata to the API
-      const response = await fetch("/api/mint-nft", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          image: generatedImage,
-          title,
-          description,
-          publicKey: storedSmartWalletPubkey,
-          signature,
-        }),
-      });
-
-      console.log("Response status:", response.status);
-      console.log(
-        "Response headers:",
-        Object.fromEntries(response.headers.entries())
-      );
-
-      let data;
       try {
-        const text = await response.text();
-        console.log("Raw response:", text);
-        data = JSON.parse(text);
-      } catch (e: unknown) {
-        console.error("Failed to parse response:", e);
-        const errorMessage = e instanceof Error ? e.message : "Unknown error";
-        throw new Error(`Server returned an invalid response: ${errorMessage}`);
-      }
+        console.log("Calling signMessage with instruction...");
+        const txid = await signMessage(instruction);
+        console.log("Transaction ID:", txid);
 
-      if (!response.ok) {
-        throw new Error(data.details || data.error || "Failed to mint NFT");
+        if (txid) {
+          toast.success("NFT Minting Initiated!", {
+            description: `Transaction Hash: ${txid}`,
+          });
+          return;
+        } else {
+          throw new Error("No transaction ID returned");
+        }
+      } catch (error) {
+        console.error("Error calling signMessage:", error);
+        throw error;
       }
-
-      toast.success("NFT Minted Successfully!", {
-        description: `NFT Address: ${data.nftAddress}`,
-      });
     } catch (error) {
       console.error("Error minting NFT:", error);
       toast.error("Failed to mint NFT", {

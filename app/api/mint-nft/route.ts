@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { Connection, PublicKey, clusterApiUrl, Transaction, TransactionInstruction } from "@solana/web3.js";
 import { Metaplex, keypairIdentity, toMetaplexFile } from "@metaplex-foundation/js";
 import { Keypair } from "@solana/web3.js";
+import * as bs58 from "bs58";
+import nacl from "tweetnacl";
 
 // Initialize connection to Solana devnet
 const connection = new Connection(clusterApiUrl("devnet"), "confirmed");
@@ -21,6 +23,15 @@ try {
   // Check server account balance
   const balance = await connection.getBalance(serverKeypair.publicKey);
   console.log("Server account balance:", balance / 1e9, "SOL");
+  
+  // Warn if balance is too low
+  if (balance < 0.05 * 1e9) { // Less than 0.05 SOL
+    console.warn("⚠️ WARNING: Server wallet balance is very low. Please fund this wallet address to mint NFTs.");
+    if (balance === 0) {
+      console.error("❌ ERROR: Server wallet has zero balance. NFT minting will fail!");
+      console.error("👉 PLEASE FUND THIS ADDRESS: " + serverKeypair.publicKey.toBase58());
+    }
+  }
 } catch (error) {
   console.error("Failed to initialize Metaplex:", error);
   throw new Error("Failed to initialize Metaplex");
@@ -45,21 +56,22 @@ export async function POST(request: Request) {
       title: body.title,
       hasPublicKey: !!body.publicKey,
       hasSignature: !!body.signature,
+      hasMessage: !!body.message,
+      skipSignatureVerification: !!body.skipSignatureVerification,
       description: body.description 
     });
 
-    const { image, title, description, publicKey, signature } = body;
+    const { image, title, description, publicKey, signature, message, skipSignatureVerification } = body;
 
     // Validate required fields
-    if (!image || !title || !publicKey || !signature) {
+    if (!image || !title || !publicKey) {
       console.error("Missing required fields:", { 
         image: !!image, 
         title: !!title, 
         publicKey: !!publicKey,
-        signature: !!signature 
       });
       return NextResponse.json(
-        { error: "Missing required fields", details: "Image, title, publicKey, and signature are required" },
+        { error: "Missing required fields", details: "Image, title, and publicKey are required" },
         { status: 400 }
       );
     }
@@ -85,9 +97,65 @@ export async function POST(request: Request) {
       );
     }
 
+    // Verify the signature if not skipping verification
+    if (!skipSignatureVerification) {
+      if (!signature || !message) {
+        console.error("Missing signature or message");
+        return NextResponse.json(
+          { error: "Missing required fields", details: "Signature and message are required when not skipping verification" },
+          { status: 400 }
+        );
+      }
+      
+      try {
+        console.log("Verifying signature...");
+        const messageBuffer = Buffer.from(message);
+        const signatureBuffer = Buffer.from(signature, 'base64');
+        
+        // Use tweetnacl to verify the signature
+        console.log("Using nacl for verification");
+        const isValid = nacl.sign.detached.verify(
+          messageBuffer, 
+          signatureBuffer,
+          creatorPublicKey.toBytes()
+        );
+        
+        if (!isValid) {
+          console.error("Signature verification failed");
+          return NextResponse.json(
+            { error: "Invalid signature", details: "The provided signature could not be verified" },
+            { status: 400 }
+          );
+        }
+        
+        console.log("Signature verified successfully");
+      } catch (error) {
+        console.error("Error verifying signature:", error);
+        return NextResponse.json(
+          { error: "Signature verification failed", details: error instanceof Error ? error.message : "Unknown error" },
+          { status: 400 }
+        );
+      }
+    } else {
+      console.log("Skipping signature verification as requested");
+    }
+
     try {
       // First, upload the image to Arweave
       console.log("Uploading image to Arweave...");
+      
+      // Check balance again before proceeding
+      const balance = await connection.getBalance(serverKeypair.publicKey);
+      if (balance === 0) {
+        return NextResponse.json(
+          { 
+            error: "Server wallet has no funds", 
+            details: "Please fund the server wallet address: " + serverKeypair.publicKey.toBase58()
+          },
+          { status: 400 }
+        );
+      }
+      
       const imageFile = toMetaplexFile(
         Buffer.from(image.split(',')[1], 'base64'),
         `${title.replace(/\s+/g, '-').toLowerCase()}.png`
